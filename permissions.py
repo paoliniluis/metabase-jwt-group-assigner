@@ -8,6 +8,20 @@ MB_SITE_URL = 'http://<your_metabase_instance_url>' # Your Metabase URL goes her
 
 group_endpoint = f'{MB_SITE_URL}/api/permissions/group'
 jwt_group_mapping_endpoint = f'{MB_SITE_URL}/api/setting/jwt-group-mappings'
+properties_endpoint = f'{MB_SITE_URL}/api/session/properties'
+
+def get_current_groups():
+    headers = {
+        'Content-Type': 'application/json',
+        'X-API-KEY': MB_API_KEY
+    }
+    response = requests.get(properties_endpoint, headers=headers)
+    if response.status_code == 200:
+        properties = response.json()
+        return properties['jwt-group-mappings']
+    else:
+        print(f"Failed to get groups. Status code: {response.status_code}, Response: {response.text}")
+        return []
 
 def create_group(group_name):
     headers = {
@@ -24,17 +38,26 @@ def create_group(group_name):
         print(f"Failed to create group '{group_name}'. Status code: {response.status_code}, Response: {response.text}")
     return response.json()['id']
 
-def map_group_to_jwt(group_id, jwt_group):
+def map_group_to_jwt(current_groups, group_id, group_name, jwt_group):
     headers = {
         'Content-Type': 'application/json',
         'X-API-KEY': MB_API_KEY
     }
+    # start with a copy of the existing mappings
     data = {
-        "value":
-        {
-            jwt_group: [group_id]
-        }
+        "value": current_groups.copy()
     }
+    
+    # if the jwt group key already exists, append the new group id to its list
+    if jwt_group in data["value"]:
+        if group_id not in data["value"][jwt_group]:
+            data["value"][jwt_group].append(group_id)
+    # if the jwt group key does not exist, add it with the new group id
+    else:
+        data["value"][jwt_group] = [group_id]
+        
+    print(f"Current groups: {current_groups}")
+    print(f"Updated groups: {data}")
     response = requests.put(jwt_group_mapping_endpoint, headers=headers, json=data)
     if response.status_code == 204:
         print(f"Group '{group_name}' successfully mapped to JWT group '{jwt_group}'")
@@ -48,4 +71,5 @@ if __name__ == "__main__":
     group_name = sys.argv[1]
     jwt_group = sys.argv[2]
     group_id = create_group(group_name)
-    map_group_to_jwt(group_id, jwt_group)
+    current_groups = get_current_groups()
+    map_group_to_jwt(current_groups, group_id, group_name, jwt_group)
